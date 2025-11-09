@@ -202,8 +202,7 @@ class ReliabilityScorer:
 
         # If manifold distances provided, incorporate them
         if manifold_distances is not None:
-            dist_norm = (manifold_distances - manifold_distances.min()) / \
-                       (manifold_distances.max() - manifold_distances.min() + 1e-10)
+            dist_norm = (manifold_distances - manifold_distances.min()) / (manifold_distances.max() - manifold_distances.min() + 1e-10)
             reliability = 0.7 * reliability + 0.3 * (1 - dist_norm)
 
         return reliability
