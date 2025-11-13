@@ -1,0 +1,4 @@
+,accuracy,coverage,interval_width
+RF_SplitCP,0.710075,1.0,2.0
+GB_SplitCP,0.708575,1.0,2.0
+Voting_SplitCP,0.705975,1.0,2.0
