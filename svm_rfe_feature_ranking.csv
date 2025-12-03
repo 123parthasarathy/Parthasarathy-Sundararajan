@@ -1,0 +1,14 @@
+Feature,Ranking,Selected
+thal,1,True
+number_of_major_vessels,2,False
+oldpeak,3,False
+chest,4,False
+exercise_induced_angina,5,False
+sex,6,False
+maximum_heart_rate_achieved,7,False
+resting_electrocardiographic_results,8,False
+resting_blood_pressure,9,False
+serum_cholestoral,10,False
+fasting_blood_sugar,11,False
+slope,12,False
+age,13,False
