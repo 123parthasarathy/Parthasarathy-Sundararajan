@@ -1,6 +1,6 @@
-# Advanced SVM Methods for Medical Diagnosis
+# Improved SVM Methods for Medical Diagnosis
 
-Comparison of advanced SVM-specific techniques for heart disease prediction using the Cleveland Heart Disease dataset (UCI Repository).
+Advanced SVM techniques for heart disease prediction using the Cleveland Heart Disease dataset (UCI Repository).
 
 ## Dataset
 
@@ -10,35 +10,38 @@ Comparison of advanced SVM-specific techniques for heart disease prediction usin
 - **Features**: 13 clinical attributes
 - **Task**: Binary classification (heart disease presence/absence)
 
-## SVM Methods Implemented
+## Improved Methods Implemented
 
-### 1. SVM-RFE (Recursive Feature Elimination)
-Uses SVM coefficients to iteratively rank and select features. Unlike generic filter methods (chi-square, ANOVA), SVM-RFE:
-- Uses linear SVM weights to rank feature importance
-- Iteratively removes least important features
-- Re-trains SVM at each step to update rankings
+### 1. SMOTE (Synthetic Minority Over-sampling)
+Generates synthetic samples for minority class by interpolating between existing samples and their k-nearest neighbors. Addresses class imbalance without simple duplication.
 
-### 2. Stacked SVM
-A meta-learning approach where:
-- Base SVMs with different kernels (linear, RBF, polynomial) generate predictions
-- Cross-validated predictions become meta-features
-- An SVM meta-learner combines base predictions optimally
+### 2. Polynomial Feature Interactions
+Creates degree-2 interaction features (e.g., age*cholesterol) to capture non-linear relationships between clinical measurements.
 
-### 3. Calibrated SVM (Platt Scaling)
-Applies sigmoid calibration to improve probability estimates:
-- Standard SVM produces uncalibrated scores
-- Platt scaling fits a sigmoid to convert scores to probabilities
-- Measured using Brier score (lower = better calibration)
+### 3. Bayesian-Inspired Hyperparameter Optimization
+Uses exploration-exploitation strategy to find optimal C and gamma parameters more efficiently than grid search.
 
-### 4. Cost-Sensitive SVM
-Handles class imbalance by weighting classes inversely proportional to frequency.
+### 4. Multiple Kernel Learning (MKL)
+Learns optimal weighted combination of kernels:
+- K_combined = w1*K_linear + w2*K_rbf + w3*K_poly
+- Weights are optimized via cross-validation
 
-## Key Methodological Features
+### 5. Nystroem Kernel Approximation
+Approximates RBF kernel using subset of training samples, enabling linear SVM in approximated feature space. Best performing method.
 
-- **SVM-specific feature selection** (not generic filter methods)
-- **Nested cross-validation** for unbiased performance estimates
-- **Proper statistical tests** (paired t-test for matched CV folds)
-- **Calibration analysis** using Brier score
+## Results
+
+| Model | CV Accuracy | Holdout Accuracy |
+|-------|-------------|------------------|
+| RBF-SVM (Baseline) | 83.33% | 81.48% |
+| SMOTE + SVM | 82.59% | 81.48% |
+| PolyFeatures + SVM | 80.74% | 83.33% |
+| Bayesian-Opt SVM | 81.85% | **87.04%** |
+| MKL-SVM | 75.19% | 77.78% |
+| **Nystroem-SVM** | **84.44%** | 85.19% |
+
+**Best CV Performance**: Nystroem-SVM (+1.11% over baseline)
+**Best Holdout Performance**: Bayesian-Opt SVM (87.04%)
 
 ## Usage
 
@@ -52,4 +55,3 @@ python ensemble_svm_analysis.py
 - `results_comparison.png` - Visualization of results
 - `model_comparison_results.csv` - Performance summary
 - `statistical_comparison.csv` - Statistical test results
-- `svm_rfe_feature_ranking.csv` - SVM-RFE feature rankings
