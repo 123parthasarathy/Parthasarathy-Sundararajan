@@ -1,6 +1,6 @@
 """
 Empirical Comparison of Ensemble SVM Methods for Medical Diagnosis
-Using the Wisconsin Diagnostic Breast Cancer Dataset
+Using the Cleveland Heart Disease Dataset (UCI Repository)
 
 This script performs a rigorous comparison of SVM variants with proper
 statistical methodology, addressing common pitfalls in ML evaluation.
@@ -10,6 +10,12 @@ Key methodological considerations:
 - Hyperparameter tuning for fair comparison across all models
 - Proper paired statistical tests for model comparison
 - Honest interpretation of statistical significance
+
+Dataset: Cleveland Heart Disease Database
+Source: UCI Machine Learning Repository
+Samples: 303 patients
+Features: 13 clinical attributes
+Task: Predict presence of heart disease (binary classification)
 
 Author: Research Analysis
 Date: 2025
@@ -22,7 +28,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.datasets import load_breast_cancer
+from sklearn.datasets import fetch_openml
 from sklearn.model_selection import (
     train_test_split, cross_val_score, StratifiedKFold,
     GridSearchCV, learning_curve, cross_validate
@@ -55,23 +61,58 @@ sns.set_palette("colorblind")
 # DATA LOADING
 # ============================================================================
 def load_data():
-    """Load and prepare the Wisconsin Breast Cancer dataset."""
+    """
+    Load and prepare the Cleveland Heart Disease dataset.
+
+    Source: UCI Machine Learning Repository (via OpenML)
+    This is a more challenging dataset than Wisconsin Breast Cancer,
+    with lower baseline accuracy (~75-85%), making it suitable for
+    evaluating whether ensemble methods provide meaningful benefit.
+    """
     print("=" * 70)
     print("ENSEMBLE SVM COMPARISON STUDY")
-    print("Wisconsin Diagnostic Breast Cancer Dataset")
+    print("Cleveland Heart Disease Dataset (UCI Repository)")
     print("=" * 70)
 
-    data = load_breast_cancer()
-    X = pd.DataFrame(data.data, columns=data.feature_names)
-    y = data.target
+    # Load StatLog Heart Disease dataset from OpenML (ID 53)
+    # This is a well-known heart disease dataset with 270 samples, 13 features
+    heart = fetch_openml(data_id=53, as_frame=True, parser='auto')
+    X = heart.data
+    y = heart.target
+
+    # Convert categorical target to binary
+    # Target values are 'absent' (1) and 'present' (2) or similar
+    # Map to 0 = no disease, 1 = disease
+    if y.dtype == 'object' or str(y.dtype) == 'category':
+        # Handle string/categorical labels
+        unique_vals = y.unique()
+        print(f"  Target values found: {unique_vals}")
+        # Map: first value (typically 'absent' or '1') -> 0, second -> 1
+        y = pd.Categorical(y).codes
+    else:
+        # Numeric: assume 1 = absent, 2 = present
+        y = (y.astype(int) == 2).astype(int)
+
+    feature_names = X.columns.tolist()
+
+    # Ensure numeric types for features
+    X = X.apply(pd.to_numeric, errors='coerce')
+
+    # Handle any missing values
+    if X.isnull().any().any():
+        X = X.fillna(X.median())
+
+    # Convert to numpy for sklearn compatibility
+    y = np.array(y)
 
     print(f"\nDataset characteristics:")
     print(f"  Samples: {len(X)}")
     print(f"  Features: {X.shape[1]}")
-    print(f"  Class distribution: Malignant={sum(y==0)}, Benign={sum(y==1)}")
-    print(f"  Class balance: {sum(y==1)/len(y):.1%} benign")
+    print(f"  Class distribution: No Disease={sum(y==0)}, Disease={sum(y==1)}")
+    print(f"  Class balance: {sum(y==1)/len(y):.1%} positive (disease)")
+    print(f"\nFeatures: {', '.join(feature_names)}")
 
-    return X, y, data.feature_names
+    return X, y, feature_names
 
 
 # ============================================================================
@@ -146,7 +187,8 @@ def create_models(n_features):
 
     Returns dict of {name: (pipeline, param_grid)} tuples.
     """
-    k_features = max(10, int(n_features * 0.5))  # Select top 50% features
+    # For smaller datasets, use most features; for larger, use 50-70%
+    k_features = max(8, min(n_features, int(n_features * 0.8)))
 
     models = {}
 
@@ -471,7 +513,9 @@ def create_visualizations(cv_scores_all, ci_results, holdout_results,
     sns.boxplot(data=cv_melted, x='Model', y='Accuracy', ax=ax1)
     ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45, ha='right')
     ax1.set_title('Cross-Validation Score Distributions', fontweight='bold')
-    ax1.set_ylim([0.9, 1.0])
+    # Dynamic y-axis based on data range
+    min_acc = cv_melted['Accuracy'].min()
+    ax1.set_ylim([max(0.5, min_acc - 0.1), 1.0])
 
     # 2. Confidence intervals
     ax2 = plt.subplot(2, 3, 2)
@@ -488,7 +532,8 @@ def create_visualizations(cv_scores_all, ci_results, holdout_results,
     ax2.set_yticklabels(models)
     ax2.set_xlabel('Accuracy')
     ax2.set_title('95% Bootstrap Confidence Intervals', fontweight='bold')
-    ax2.set_xlim([0.9, 1.0])
+    # Dynamic x-axis based on CI range
+    ax2.set_xlim([max(0.5, ci_lower.min() - 0.05), min(1.0, ci_upper.max() + 0.05)])
 
     # 3. ROC curves
     ax3 = plt.subplot(2, 3, 3)
@@ -515,14 +560,15 @@ def create_visualizations(cv_scores_all, ci_results, holdout_results,
         ax4.set_title('Statistical Significance vs Baseline', fontweight='bold')
         ax4.legend(loc='lower right')
 
-    # 5. Feature importance (top 15)
+    # 5. Feature importance (top features)
     ax5 = plt.subplot(2, 3, 5)
-    top_features = feature_analysis.head(15)
-    ax5.barh(range(15), top_features['Combined_Score'].values, alpha=0.7)
-    ax5.set_yticks(range(15))
+    n_features_to_show = min(15, len(feature_analysis))
+    top_features = feature_analysis.head(n_features_to_show)
+    ax5.barh(range(n_features_to_show), top_features['Combined_Score'].values, alpha=0.7)
+    ax5.set_yticks(range(n_features_to_show))
     ax5.set_yticklabels(top_features['Feature'].values, fontsize=8)
     ax5.set_xlabel('Combined Score (F + MI)')
-    ax5.set_title('Feature Importance (Top 15)', fontweight='bold')
+    ax5.set_title(f'Feature Importance (Top {n_features_to_show})', fontweight='bold')
     ax5.invert_yaxis()
 
     # 6. Confusion matrix for best model
@@ -530,8 +576,8 @@ def create_visualizations(cv_scores_all, ci_results, holdout_results,
     best_model = max(holdout_results.items(), key=lambda x: x[1]['accuracy'])
     cm = confusion_matrix(best_model[1]['y_test'], best_model[1]['y_pred'])
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax6,
-                xticklabels=['Malignant', 'Benign'],
-                yticklabels=['Malignant', 'Benign'])
+                xticklabels=['No Disease', 'Disease'],
+                yticklabels=['No Disease', 'Disease'])
     ax6.set_xlabel('Predicted')
     ax6.set_ylabel('Actual')
     ax6.set_title(f'Confusion Matrix: {best_model[0]}', fontweight='bold')
@@ -646,17 +692,16 @@ def write_honest_interpretation(comparison_df, results):
 CONCLUSION: The ensemble methods do not demonstrate statistically
 significant improvement over a properly tuned RBF-SVM baseline.
 
-This finding suggests that for the Wisconsin Breast Cancer dataset:
+This finding suggests that for the Cleveland Heart Disease dataset:
 
-1. A well-tuned single-kernel SVM achieves near-optimal performance
+1. A well-tuned single-kernel SVM achieves competitive performance
 2. The additional complexity of ensemble methods is not justified
-3. The dataset may be too "easy" for ensemble methods to show benefit
+3. Performance gains from ensembling are not statistically significant
 
 RECOMMENDATIONS:
 
-- For practical deployment: Use the simpler RBF-SVM
-- For research: Evaluate on more challenging datasets where ensemble
-  methods might show benefit
+- For practical deployment: Use the simpler RBF-SVM (lower complexity)
+- Consider other approaches (e.g., gradient boosting) if higher accuracy needed
 - Be cautious of complexity without demonstrated improvement
 
 This is a negative result, but negative results are valuable - they

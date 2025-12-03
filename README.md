@@ -1,6 +1,14 @@
 # Ensemble SVM Comparison Study
 
-Empirical comparison of SVM ensemble methods for medical diagnosis using the Wisconsin Diagnostic Breast Cancer dataset.
+Empirical comparison of SVM ensemble methods for medical diagnosis using the Cleveland Heart Disease dataset (UCI Repository).
+
+## Dataset
+
+- **Name**: StatLog Heart Disease Dataset
+- **Source**: UCI Machine Learning Repository (OpenML ID 53)
+- **Samples**: 270 patients
+- **Features**: 13 clinical attributes
+- **Task**: Binary classification (heart disease presence/absence)
 
 ## Overview
 

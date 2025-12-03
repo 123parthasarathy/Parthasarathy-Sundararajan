@@ -2,6 +2,15 @@
 
 This document addresses the referee criticisms of the original "Enhanced Medical Diagnosis Using a Multi-Kernel Ensemble SVM" manuscript and explains the corrections implemented in `ensemble_svm_analysis.py`.
 
+## Dataset
+
+**Cleveland Heart Disease Dataset (UCI Repository)**
+- Source: StatLog Heart Disease dataset via OpenML (ID 53)
+- Samples: 270 patients
+- Features: 13 clinical attributes (age, sex, chest pain type, blood pressure, etc.)
+- Task: Binary classification (presence/absence of heart disease)
+- Baseline accuracy: ~85% (more challenging than breast cancer ~96%)
+
 ## Summary of Referee Criticisms
 
 The referee identified several critical issues:
