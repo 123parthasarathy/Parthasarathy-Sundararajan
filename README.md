@@ -83,21 +83,36 @@ python experiments/run_synthetic_experiments.py
 
 ## Key Results
 
-### Benchmark Performance (5-fold CV)
+### Benchmark Performance (10-fold CV on Real Datasets)
 
-| Dataset | GCN | GAT | PersLay | TIEGNN |
-|---------|-----|-----|---------|--------|
-| MUTAG-like | 78.2% | 80.4% | 78.2% | 77.1% |
-| PROTEINS-like | 90.5% | 84.5% | 89.5% | **90.5%** |
+#### MUTAG (135 graphs, binary classification)
 
-### Ablation Study
+| Model | Accuracy | AUC |
+|-------|----------|-----|
+| GCN | 69.62% +/- 3.80% | 74.97% |
+| GAT | 71.10% +/- 7.11% | 75.19% |
+| PersLay | **81.54%** +/- 10.39% | **90.72%** |
+| TIEGNN | 75.60% +/- 7.21% | 85.42% |
+
+#### PROTEINS (975 graphs, binary classification)
+
+| Model | Accuracy | AUC |
+|-------|----------|-----|
+| GCN | 66.77% +/- 9.73% | 67.04% |
+| GAT | 58.60% +/- 14.02% | 67.31% |
+| PersLay | 74.47% +/- 3.77% | 79.04% |
+| **TIEGNN** | **75.08% +/- 1.97%** | 77.93% |
+
+**TIEGNN achieves best accuracy (75.08%) with lowest variance (1.97%) on PROTEINS.**
+
+### Ablation Study (MUTAG)
 
 | Configuration | Accuracy | Relative |
 |--------------|----------|----------|
-| TIEGNN (full) | 77.1% | baseline |
-| w/o Topology | 75.1% | -2.0 pp |
-| w/o Interpretable | 78.2% | +1.1 pp |
-| Graph-only | 80.4% | +3.3 pp |
+| TIEGNN (full) | 75.60% | baseline |
+| w/o Topology | 72.58% | -3.02 pp |
+| w/o Interpretable | 81.43% | +5.83 pp |
+| Graph-only | 73.96% | -1.64 pp |
 
 ### Runtime (ms, batch of 32 graphs)
 
