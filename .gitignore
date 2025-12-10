@@ -37,3 +37,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Data directories (cached/processed datasets)
+data/
