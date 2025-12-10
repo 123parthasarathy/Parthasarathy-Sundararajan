@@ -1,5 +1,14 @@
 # QI-VGT Paper Validation Summary for Q1 Publication
 
+## IMPORTANT: For Real Data Validation
+
+**Run on a machine with internet access:**
+```bash
+python run_with_real_data.py
+```
+
+This downloads the actual MUTAG, PTC_MR, PROTEINS benchmarks from TUDataset.
+
 ## Executive Summary
 
 The Quantum-Inspired Variational Graph Transformer (QI-VGT) paper has been comprehensively validated through:
