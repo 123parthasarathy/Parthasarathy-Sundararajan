@@ -1132,16 +1132,46 @@ class ComprehensiveEvaluator:
 
     def prepare_features(self, df: pd.DataFrame,
                         target_col: str = 'response_time_minutes') -> Tuple[np.ndarray, np.ndarray]:
-        """Prepare feature matrix and target vector"""
+        """Prepare feature matrix and target vector with enhanced engineering"""
+
+        df = df.copy()
+
+        # Enhanced feature engineering
+        if 'hour' in df.columns:
+            # Peak hours indicator (more granular)
+            df['is_morning_peak'] = df['hour'].isin([7, 8, 9]).astype(int)
+            df['is_evening_peak'] = df['hour'].isin([17, 18, 19]).astype(int)
+            df['is_lunch'] = df['hour'].isin([11, 12, 13]).astype(int)
+            df['is_late_night'] = df['hour'].isin([0, 1, 2, 3, 4]).astype(int)
+
+            # Hour squared for non-linear patterns
+            df['hour_squared'] = (df['hour'] - 12) ** 2 / 144  # Normalized
+
+        if 'day_of_week' in df.columns:
+            # Weekday vs weekend interaction with hour
+            if 'hour' in df.columns:
+                df['weekend_night'] = ((df['is_weekend'] == 1) & (df['is_night'] == 1)).astype(int)
+                df['weekday_rush'] = ((df['is_weekend'] == 0) & (df['is_rush_hour'] == 1)).astype(int)
+
+        # City-specific patterns
+        if 'city_encoded' in df.columns and 'hour' in df.columns:
+            # Interaction features
+            df['city_hour'] = df['city_encoded'] * df['hour'] / 24
+
+        # Incident type interaction
+        if 'incident_type_encoded' in df.columns:
+            df['incident_city'] = df['incident_type_encoded'] * df['city_encoded']
 
         feature_cols = [
             'hour', 'day_of_week', 'month', 'is_weekend', 'is_night',
             'is_rush_hour', 'is_business_hours', 'hour_sin', 'hour_cos',
-            'day_sin', 'day_cos', 'month_sin', 'month_cos', 'city_encoded'
+            'day_sin', 'day_cos', 'month_sin', 'month_cos', 'city_encoded',
+            'is_morning_peak', 'is_evening_peak', 'is_lunch', 'is_late_night',
+            'hour_squared', 'weekend_night', 'weekday_rush', 'city_hour'
         ]
 
         if 'incident_type_encoded' in df.columns:
-            feature_cols.append('incident_type_encoded')
+            feature_cols.extend(['incident_type_encoded', 'incident_city'])
 
         available_cols = [c for c in feature_cols if c in df.columns]
 
@@ -1156,6 +1186,12 @@ class ComprehensiveEvaluator:
         X = X[mask].values
         y = y[mask].values
 
+        # Log transform target for better distribution (response time is right-skewed)
+        y = np.log1p(y)  # log(1 + y) to handle zeros
+
+        print(f"  Features used: {len(available_cols)}")
+        print(f"  Target: log-transformed response time")
+
         return X, y
 
     def walk_forward_validation(self, X: np.ndarray, y: np.ndarray,
@@ -1163,6 +1199,7 @@ class ComprehensiveEvaluator:
         """
         Walk-forward (expanding window) cross-validation.
         Proper time-series validation methodology.
+        Note: y is log-transformed, metrics computed on both scales.
         """
 
         from sklearn.preprocessing import StandardScaler
@@ -1178,7 +1215,7 @@ class ComprehensiveEvaluator:
         ) for name in models.keys()}
 
         print("\n" + "=" * 70)
-        print("WALK-FORWARD CROSS-VALIDATION")
+        print("WALK-FORWARD CROSS-VALIDATION (Log-transformed target)")
         print("=" * 70)
 
         for fold in range(n_splits):
@@ -1211,18 +1248,23 @@ class ComprehensiveEvaluator:
                         model = model_class
 
                     model.fit(X_train_scaled, y_train)
-                    y_pred = model.predict(X_test_scaled)
-
-                    # Clip predictions
-                    y_pred = np.clip(y_pred, 0.5, 60)
+                    y_pred_log = model.predict(X_test_scaled)
 
                     training_time = time.time() - start_time
 
-                    # Calculate metrics
-                    r2 = r2_score(y_test, y_pred)
-                    mae = mean_absolute_error(y_test, y_pred)
-                    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                    mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+                    # R² on log scale (this is what matters for model comparison)
+                    r2 = r2_score(y_test, y_pred_log)
+
+                    # Convert back to original scale for interpretable MAE/RMSE
+                    y_test_orig = np.expm1(y_test)  # inverse of log1p
+                    y_pred_orig = np.expm1(y_pred_log)
+                    y_pred_orig = np.clip(y_pred_orig, 0.5, 60)  # Clip to valid range
+
+                    mae = mean_absolute_error(y_test_orig, y_pred_orig)
+                    rmse = np.sqrt(mean_squared_error(y_test_orig, y_pred_orig))
+
+                    # MAPE with safeguard against division by zero
+                    mape = np.mean(np.abs((y_test_orig - y_pred_orig) / (y_test_orig + 0.1))) * 100
 
                     if np.isfinite(r2) and np.isfinite(mae):
                         results[name].r2_scores.append(r2)
@@ -1231,7 +1273,7 @@ class ComprehensiveEvaluator:
                         results[name].mape_scores.append(mape)
                         results[name].training_times.append(training_time)
 
-                        print(f"  {name}: R²={r2:.4f}, MAE={mae:.4f}")
+                        print(f"  {name}: R²={r2:.4f}, MAE={mae:.2f} min")
 
                 except Exception as e:
                     print(f"  {name}: FAILED - {str(e)[:50]}")
@@ -1241,7 +1283,10 @@ class ComprehensiveEvaluator:
     def evaluate_deep_learning(self, X: np.ndarray, y: np.ndarray,
                               dl_models: DeepLearningModels,
                               sequence_length: int = 10) -> Dict[str, ModelResults]:
-        """Evaluate deep learning models"""
+        """
+        Evaluate deep learning models.
+        Note: y is already log-transformed from prepare_features().
+        """
 
         if not dl_models.tf_available:
             logger.warning("TensorFlow not available, skipping deep learning evaluation")
@@ -1256,7 +1301,7 @@ class ComprehensiveEvaluator:
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
 
-        # Create sequences
+        # Create sequences (y is already log-transformed)
         X_seq, y_seq = dl_models.create_sequences(X_scaled, y, sequence_length)
 
         # Train/val/test split (temporal)
@@ -1271,7 +1316,7 @@ class ComprehensiveEvaluator:
         input_shape = (sequence_length, X.shape[1])
 
         print("\n" + "=" * 70)
-        print("DEEP LEARNING MODEL EVALUATION")
+        print("DEEP LEARNING MODEL EVALUATION (Log-transformed target)")
         print("=" * 70)
         print(f"Sequence length: {sequence_length}")
         print(f"Train: {len(X_train):,}, Val: {len(X_val):,}, Test: {len(X_test):,}")
@@ -1298,14 +1343,20 @@ class ComprehensiveEvaluator:
                 )
                 training_time = time.time() - start_time
 
-                # Evaluate on test set
-                y_pred = model.predict(X_test, verbose=0).flatten()
-                y_pred = np.clip(y_pred, 0.5, 60)
+                # Evaluate on test set - predictions are in log scale
+                y_pred_log = model.predict(X_test, verbose=0).flatten()
 
-                r2 = r2_score(y_test, y_pred)
-                mae = mean_absolute_error(y_test, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+                # R² on log scale (for fair comparison with traditional models)
+                r2 = r2_score(y_test, y_pred_log)
+
+                # Convert back to original scale for interpretable MAE/RMSE
+                y_test_orig = np.expm1(y_test)  # inverse of log1p
+                y_pred_orig = np.expm1(y_pred_log)
+                y_pred_orig = np.clip(y_pred_orig, 0.5, 60)  # Clip to valid range
+
+                mae = mean_absolute_error(y_test_orig, y_pred_orig)
+                rmse = np.sqrt(mean_squared_error(y_test_orig, y_pred_orig))
+                mape = np.mean(np.abs((y_test_orig - y_pred_orig) / (y_test_orig + 0.1))) * 100
 
                 results[name] = ModelResults(
                     model_name=name,
@@ -1317,8 +1368,8 @@ class ComprehensiveEvaluator:
                 )
 
                 print(f"  R²: {r2:.4f}")
-                print(f"  MAE: {mae:.4f} minutes")
-                print(f"  RMSE: {rmse:.4f} minutes")
+                print(f"  MAE: {mae:.2f} minutes")
+                print(f"  RMSE: {rmse:.2f} minutes")
                 print(f"  MAPE: {mape:.2f}%")
                 print(f"  Training time: {training_time:.1f}s")
 
@@ -1481,7 +1532,10 @@ class AblationStudy:
 
     def _evaluate_model(self, X: np.ndarray, y: np.ndarray,
                        model_class, n_splits: int) -> dict:
-        """Helper to evaluate model with cross-validation"""
+        """
+        Helper to evaluate model with cross-validation.
+        Note: y is log-transformed from prepare_features().
+        """
 
         from sklearn.preprocessing import StandardScaler
         from sklearn.metrics import r2_score, mean_absolute_error
@@ -1512,10 +1566,15 @@ class AblationStudy:
             try:
                 model = type(model_class)(**model_class.get_params())
                 model.fit(X_train_scaled, y_train)
-                y_pred = np.clip(model.predict(X_test_scaled), 0.5, 60)
+                y_pred_log = model.predict(X_test_scaled)
 
-                r2_scores.append(r2_score(y_test, y_pred))
-                mae_scores.append(mean_absolute_error(y_test, y_pred))
+                # R² on log scale
+                r2_scores.append(r2_score(y_test, y_pred_log))
+
+                # MAE on original scale
+                y_test_orig = np.expm1(y_test)
+                y_pred_orig = np.clip(np.expm1(y_pred_log), 0.5, 60)
+                mae_scores.append(mean_absolute_error(y_test_orig, y_pred_orig))
             except:
                 continue
 
