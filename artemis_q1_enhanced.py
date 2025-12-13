@@ -646,14 +646,18 @@ class DeepLearningModels:
             self.tf = tf
             self.tf_available = True
 
-            # Configure GPU memory growth
-            gpus = tf.config.experimental.list_physical_devices('GPU')
-            if gpus:
-                for gpu in gpus:
-                    tf.config.experimental.set_memory_growth(gpu, True)
-
-            logger.info(f"TensorFlow version: {tf.__version__}")
-            logger.info(f"GPU available: {len(gpus) > 0}")
+            # Configure GPU memory growth (with error handling for different TF versions)
+            try:
+                gpus = tf.config.experimental.list_physical_devices('GPU')
+                if gpus:
+                    for gpu in gpus:
+                        tf.config.experimental.set_memory_growth(gpu, True)
+                logger.info(f"TensorFlow version: {tf.__version__}")
+                logger.info(f"GPU available: {len(gpus) > 0}")
+            except (AttributeError, RuntimeError) as e:
+                # Handle older TF versions or config errors
+                logger.info(f"TensorFlow version: {tf.__version__}")
+                logger.info(f"GPU config skipped: {str(e)[:50]}")
 
         except ImportError:
             self.tf_available = False
