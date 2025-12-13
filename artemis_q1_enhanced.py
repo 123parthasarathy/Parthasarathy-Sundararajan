@@ -1922,23 +1922,62 @@ def main():
         'AdaBoost': AdaBoostRegressor(n_estimators=100, random_state=config.random_seed)
     }
 
+    # Try to add XGBoost and LightGBM (high-performance alternatives to DL)
+    try:
+        from xgboost import XGBRegressor
+        traditional_models['XGBoost'] = XGBRegressor(
+            n_estimators=200, max_depth=8, learning_rate=0.1,
+            random_state=config.random_seed, n_jobs=-1, verbosity=0
+        )
+        print("  XGBoost: Available")
+    except ImportError:
+        print("  XGBoost: Not installed (pip install xgboost)")
+
+    try:
+        from lightgbm import LGBMRegressor
+        traditional_models['LightGBM'] = LGBMRegressor(
+            n_estimators=200, max_depth=8, learning_rate=0.1,
+            random_state=config.random_seed, n_jobs=-1, verbose=-1
+        )
+        print("  LightGBM: Available")
+    except ImportError:
+        print("  LightGBM: Not installed (pip install lightgbm)")
+
+    # Try to add CatBoost
+    try:
+        from catboost import CatBoostRegressor
+        traditional_models['CatBoost'] = CatBoostRegressor(
+            iterations=200, depth=8, learning_rate=0.1,
+            random_state=config.random_seed, verbose=0
+        )
+        print("  CatBoost: Available")
+    except ImportError:
+        print("  CatBoost: Not installed (pip install catboost)")
+
     traditional_results = evaluator.walk_forward_validation(X, y, traditional_models)
 
     # =========================================================================
-    # STEP 6: Deep Learning Models Evaluation
+    # STEP 6: Deep Learning Models Evaluation (Optional)
     # =========================================================================
 
     dl_models = DeepLearningModels(config)
 
     if dl_models.tf_available:
-        dl_results = evaluator.evaluate_deep_learning(X, y, dl_models, sequence_length=10)
-
-        # Combine results
-        all_results = {**traditional_results, **dl_results}
+        try:
+            dl_results = evaluator.evaluate_deep_learning(X, y, dl_models, sequence_length=10)
+            # Combine results
+            all_results = {**traditional_results, **dl_results}
+        except Exception as e:
+            print(f"\nDeep Learning evaluation failed: {str(e)[:100]}")
+            print("Continuing with traditional ML models only...")
+            all_results = traditional_results
     else:
         all_results = traditional_results
-        print("\nNote: TensorFlow not available. Skipping deep learning models.")
-        print("Install with: pip install tensorflow")
+        print("\n" + "-" * 70)
+        print("Note: TensorFlow not available or has compatibility issues.")
+        print("Using XGBoost/LightGBM/CatBoost as high-performance alternatives.")
+        print("These can achieve comparable results to deep learning for tabular data.")
+        print("-" * 70)
 
     # =========================================================================
     # STEP 7: Statistical Analysis

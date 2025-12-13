@@ -1,0 +1,27 @@
+# ARTEMIS Q1 Conda Environment
+# ==============================
+# Create environment: conda env create -f environment.yml
+# Activate: conda activate artemis
+# Run: python artemis_q1_enhanced.py
+
+name: artemis
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  - numpy=1.24.3
+  - pandas=2.0.3
+  - matplotlib=3.7.2
+  - seaborn=0.12.2
+  - scikit-learn=1.3.0
+  - scipy=1.11.1
+  - requests=2.31.0
+  - statsmodels=0.14.0
+  - pip
+  - pip:
+    - xgboost==2.0.0
+    - lightgbm==4.1.0
+    - catboost==1.2
+    - paho-mqtt==1.6.1

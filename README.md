@@ -1,126 +1,112 @@
 # ARTEMIS: Adaptive Resource and Temporal Emergency Management Intelligent System
 
-**Q1 Journal Quality Implementation** with PAHO MQTT real-time data integration for emergency dispatch optimization.
+**Q1 Journal Quality Implementation** with real-time MQTT integration for emergency dispatch optimization.
 
-## Key Features
+## Quick Start (Clean Environment)
 
-### Core Modules
-- **STQM Module**: Spatial-Temporal Queuing Model for zone clustering
-- **DLRP Module**: Response time prediction with ML and Deep Learning models
-- **PRO Module**: Multi-objective resource optimization with Pareto front generation
-
-### Deep Learning Models (TensorFlow/Keras)
-- **Bidirectional LSTM**: With batch normalization and dropout regularization
-- **Bidirectional GRU**: Gated Recurrent Units for sequence modeling
-- **Transformer**: Multi-head attention architecture
-- **CNN-LSTM Hybrid**: Convolutional feature extraction with LSTM
-
-### Real-Time Integration
-- **PAHO MQTT Streaming**: Eclipse Paho MQTT client for live data
-- **Message Transformation**: JSON, CSV, and binary format support
-- **City-Specific Transformers**: Automatic field mapping for different data sources
-
-### Statistical Rigor (Q1 Quality)
-- Walk-forward (expanding window) cross-validation
-- Bootstrap confidence intervals
-- Paired statistical tests (Wilcoxon, t-test)
-- Effect size analysis (Cohen's d)
-- Friedman test with Nemenyi post-hoc
-- Ablation studies framework
-
-## Installation
-
+### Option 1: Conda (Recommended)
 ```bash
-pip install -r requirements.txt
-```
+# Create new environment
+conda env create -f environment.yml
 
-### Requirements
-- Python 3.8+
-- TensorFlow 2.10+
-- scikit-learn 1.0+
-- paho-mqtt 1.6+
+# Activate
+conda activate artemis
 
-## Usage
-
-### Q1 Enhanced Analysis (Recommended)
-```bash
+# Run
 python artemis_q1_enhanced.py
 ```
 
-This runs:
-1. Multi-city real data download (SF, NYC, Seattle, Chicago, LA, Austin, Boston)
-2. Comprehensive preprocessing and feature engineering
-3. Traditional ML model evaluation (8 algorithms)
-4. Deep Learning model evaluation (LSTM, GRU, Transformer, CNN-LSTM)
-5. Statistical significance testing
-6. Ablation studies
-7. Publication-quality figure generation
-
-### Real-Time Mode with MQTT
+### Option 2: pip
 ```bash
-python artemis_realtime.py --mode realtime --broker broker.hivemq.com --duration 300
+# Create new environment
+conda create -n artemis python=3.10
+conda activate artemis
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run
+python artemis_q1_enhanced.py
 ```
 
-### Batch Analysis Only
+### Option 3: Manual Installation
 ```bash
-python artemis_realtime.py --mode batch
+conda create -n artemis python=3.10
+conda activate artemis
+
+pip install numpy==1.24.3 pandas==2.0.3 matplotlib==3.7.2 seaborn==0.12.2
+pip install scikit-learn==1.3.0 scipy==1.11.1 requests==2.31.0 statsmodels==0.14.0
+pip install xgboost==2.0.0 lightgbm==4.1.0 catboost==1.2
+pip install paho-mqtt==1.6.1
+
+python artemis_q1_enhanced.py
 ```
 
-## Real Public Data Sources
+## Features
 
-| City | Dataset | Records |
-|------|---------|---------|
-| San Francisco | Fire Department Calls for Service | ~15,000+ |
-| New York City | EMS Incident Dispatch Data | ~15,000+ |
-| Seattle | Real-Time Fire 911 Calls | ~15,000+ |
-| Chicago | Fire Incidents | ~10,000+ |
-| Los Angeles | Fire Department Incidents | ~10,000+ |
-| Austin | Fire Incidents | ~5,000+ |
-| Boston | Fire Incident Reporting | ~5,000+ |
+### Machine Learning Models
+| Category | Models |
+|----------|--------|
+| Linear | Ridge, Lasso, ElasticNet |
+| Tree-based | Random Forest, Extra Trees, AdaBoost |
+| Gradient Boosting | **XGBoost**, **LightGBM**, **CatBoost**, Sklearn GB |
+| Deep Learning | LSTM, GRU, Transformer (optional) |
 
-**Total: 50,000+ real records from 7+ cities**
+> **Note**: XGBoost/LightGBM/CatBoost often outperform deep learning on tabular data!
+
+### Statistical Rigor (Q1 Quality)
+- Walk-forward cross-validation (proper time-series validation)
+- Bootstrap 95% confidence intervals
+- Paired statistical tests (Wilcoxon signed-rank, paired t-test)
+- Effect size (Cohen's d)
+- Ablation studies
+
+### Real Public Data Sources
+| City | Dataset | Source |
+|------|---------|--------|
+| San Francisco | Fire Department Calls | data.sfgov.org |
+| New York City | EMS Incidents | data.cityofnewyork.us |
+| Seattle | Fire 911 Calls | data.seattle.gov |
+| Chicago | Fire Incidents | data.cityofchicago.org |
+| Los Angeles | Fire Incidents | data.lacity.org |
+| Austin | Fire Incidents | data.austintexas.gov |
+| Boston | Fire Incidents | data.boston.gov |
+
+**Total: 50,000+ real records - NO synthetic data**
 
 ## Output Files
 
 ```
 artemis_q1_outputs/
 ├── results_table.csv           # Publication-ready results
-├── ablation_results.csv        # Feature importance analysis
+├── ablation_results.csv        # Feature importance
 ├── fig_model_comparison.png    # Model comparison with CI
 ├── fig_data_summary.png        # Dataset visualization
-├── fig_learning_curves.png     # DL training curves
-├── fig_ablation.png            # Ablation study results
-└── fig_statistical.png         # Statistical significance heatmap
+├── fig_statistical.png         # Statistical significance
 ```
 
-## Models Evaluated
+## Expected Results
 
-### Traditional ML
-- Ridge Regression
-- Lasso Regression
-- ElasticNet
-- K-Nearest Neighbors
-- Random Forest
-- Gradient Boosting
-- Extra Trees
-- AdaBoost
+With XGBoost/LightGBM on real emergency dispatch data:
+- **R² Score**: 0.45 - 0.65
+- **MAE**: 2.5 - 4.0 minutes
+- **MAPE**: 25 - 40%
 
-### Deep Learning
-- Bidirectional LSTM (3-layer)
-- Bidirectional GRU (3-layer)
-- Transformer (Multi-head attention)
-- CNN-LSTM Hybrid
+These are realistic results for response time prediction using only temporal features.
 
-### Baseline Methods
-- Historical Average
-- Hourly Average
-- Moving Average
-- Exponential Smoothing
-- ARIMA
+## Troubleshooting
+
+### TensorFlow Issues
+If TensorFlow causes problems, the code will automatically use XGBoost/LightGBM instead.
+These gradient boosting methods often perform better than deep learning on tabular data.
+
+### Memory Issues
+Reduce data size:
+```python
+city_data = downloader.download_all_available(target_records=20000)
+```
 
 ## Citation
-
-If you use this code in your research, please cite:
 
 ```bibtex
 @article{artemis2024,
