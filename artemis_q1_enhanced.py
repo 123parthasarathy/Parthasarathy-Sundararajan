@@ -567,15 +567,28 @@ class AdvancedPreprocessor:
     def _final_cleanup(self, df: pd.DataFrame) -> pd.DataFrame:
         """Final cleanup and feature engineering on unified dataset"""
 
-        # Extract temporal features
+        # First, remove rows with NA in incident_datetime
         if 'incident_datetime' in df.columns:
+            df = df[df['incident_datetime'].notna()].copy()
+
+        # Extract temporal features
+        if 'incident_datetime' in df.columns and len(df) > 0:
             df['hour'] = df['incident_datetime'].dt.hour
             df['day_of_week'] = df['incident_datetime'].dt.dayofweek
             df['month'] = df['incident_datetime'].dt.month
             df['day_of_month'] = df['incident_datetime'].dt.day
-            df['week_of_year'] = df['incident_datetime'].dt.isocalendar().week.astype(int)
+
+            # Handle week_of_year carefully - use fillna before conversion
+            week_series = df['incident_datetime'].dt.isocalendar().week
+            df['week_of_year'] = week_series.fillna(1).astype(int)
+
             df['quarter'] = df['incident_datetime'].dt.quarter
             df['year'] = df['incident_datetime'].dt.year
+
+            # Fill NaN before boolean conversion
+            df['hour'] = df['hour'].fillna(0)
+            df['day_of_week'] = df['day_of_week'].fillna(0)
+
             df['is_weekend'] = df['day_of_week'].isin([5, 6]).astype(int)
 
             # Time-based features
@@ -584,13 +597,17 @@ class AdvancedPreprocessor:
             df['is_business_hours'] = ((df['hour'] >= 9) & (df['hour'] <= 17) &
                                        (df['is_weekend'] == 0)).astype(int)
 
-            # Cyclical encoding
-            df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
-            df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
-            df['day_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
-            df['day_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
-            df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
-            df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
+            # Cyclical encoding - fill NaN with 0 first
+            hour_filled = df['hour'].fillna(0)
+            day_filled = df['day_of_week'].fillna(0)
+            month_filled = df['month'].fillna(1)
+
+            df['hour_sin'] = np.sin(2 * np.pi * hour_filled / 24)
+            df['hour_cos'] = np.cos(2 * np.pi * hour_filled / 24)
+            df['day_sin'] = np.sin(2 * np.pi * day_filled / 7)
+            df['day_cos'] = np.cos(2 * np.pi * day_filled / 7)
+            df['month_sin'] = np.sin(2 * np.pi * month_filled / 12)
+            df['month_cos'] = np.cos(2 * np.pi * month_filled / 12)
 
         # Encode incident types
         if 'incident_type' in df.columns:
