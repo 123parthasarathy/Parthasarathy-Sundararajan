@@ -25,6 +25,8 @@ Dataset: MedMNIST - PathMNIST (Colorectal Cancer Histology)
 
 Requirements: pip install tensorflow numpy scipy scikit-learn matplotlib
               seaborn shap pandas tqdm medmnist statsmodels pingouin
+
+COMPATIBLE WITH: TensorFlow 2.20.0 / Keras 3.x
 ================================================================================
 """
 
@@ -196,6 +198,7 @@ class ChannelAttention(layers.Layer):
             initializer=tf.constant_initializer(self.temperature),
             trainable=True
         )
+        super().build(input_shape)
 
     def call(self, inputs):
         # Global average pooling
@@ -212,25 +215,37 @@ class ChannelAttention(layers.Layer):
 
         return inputs * attention
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'reduction_ratio': self.reduction_ratio,
+            'temperature': self.temperature
+        })
+        return config
+
 class SpatialAttention(layers.Layer):
     """
     Novel Spatial Attention Module with Multi-Scale Receptive Fields
+    Compatible with TensorFlow 2.20 / Keras 3.x
     """
     def __init__(self, kernel_sizes=[3, 5, 7], **kwargs):
         super(SpatialAttention, self).__init__(**kwargs)
         self.kernel_sizes = kernel_sizes
+        self.num_scales = len(kernel_sizes)
 
     def build(self, input_shape):
-        self.convs = [
-            layers.Conv2D(1, k, padding='same', activation=None)
-            for k in self.kernel_sizes
-        ]
+        # Create convolutions for each kernel size
+        self.conv_3 = layers.Conv2D(1, 3, padding='same', activation=None, name='spatial_conv_3')
+        self.conv_5 = layers.Conv2D(1, 5, padding='same', activation=None, name='spatial_conv_5')
+        self.conv_7 = layers.Conv2D(1, 7, padding='same', activation=None, name='spatial_conv_7')
+
         self.fusion_weights = self.add_weight(
             name='fusion_weights',
-            shape=(len(self.kernel_sizes),),
+            shape=(3,),
             initializer='ones',
             trainable=True
         )
+        super().build(input_shape)
 
     def call(self, inputs):
         # Channel-wise statistics
@@ -239,20 +254,33 @@ class SpatialAttention(layers.Layer):
         concat = tf.concat([avg_pool, max_pool], axis=-1)
 
         # Multi-scale convolutions
-        outputs = []
-        for conv in self.convs:
-            outputs.append(conv(concat))
+        out_3 = self.conv_3(concat)
+        out_5 = self.conv_5(concat)
+        out_7 = self.conv_7(concat)
 
-        # Learnable fusion
+        # Learnable fusion using TensorFlow operations (Keras 3.x compatible)
         weights = tf.nn.softmax(self.fusion_weights)
-        attention = sum(w * out for w, out in zip(weights, outputs))
+
+        # Stack and weighted sum
+        stacked = tf.stack([out_3, out_5, out_7], axis=-1)  # [B, H, W, 1, 3]
+        weights_expanded = tf.reshape(weights, [1, 1, 1, 1, 3])
+        attention = tf.reduce_sum(stacked * weights_expanded, axis=-1)  # [B, H, W, 1]
+
         attention = tf.nn.sigmoid(attention)
 
         return inputs * attention
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'kernel_sizes': self.kernel_sizes
+        })
+        return config
+
 class MultiScaleFeaturePyramid(layers.Layer):
     """
     Novel Multi-Scale Feature Pyramid with Learnable Fusion
+    Compatible with TensorFlow 2.20 / Keras 3.x
     """
     def __init__(self, filters, **kwargs):
         super(MultiScaleFeaturePyramid, self).__init__(**kwargs)
@@ -278,6 +306,7 @@ class MultiScaleFeaturePyramid(layers.Layer):
 
         # Batch normalization
         self.bn = layers.BatchNormalization()
+        super().build(input_shape)
 
     def call(self, inputs, training=None):
         # Extract multi-scale features
@@ -286,11 +315,22 @@ class MultiScaleFeaturePyramid(layers.Layer):
         f5 = self.conv5x5(inputs)
         fd = self.conv3x3_d2(inputs)
 
-        # Learnable weighted fusion
+        # Learnable weighted fusion using TensorFlow operations
         weights = tf.nn.softmax(self.fusion_weights)
-        fused = weights[0] * f1 + weights[1] * f3 + weights[2] * f5 + weights[3] * fd
+
+        # Stack and weighted sum
+        stacked = tf.stack([f1, f3, f5, fd], axis=-1)  # [B, H, W, C, 4]
+        weights_expanded = tf.reshape(weights, [1, 1, 1, 1, 4])
+        fused = tf.reduce_sum(stacked * weights_expanded, axis=-1)  # [B, H, W, C]
 
         return self.bn(fused, training=training)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'filters': self.filters
+        })
+        return config
 
 class MonteCarloDropout(layers.Layer):
     """
@@ -304,6 +344,13 @@ class MonteCarloDropout(layers.Layer):
     def call(self, inputs, training=None):
         # Always apply dropout for MC sampling
         return tf.nn.dropout(inputs, rate=self.rate)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'rate': self.rate
+        })
+        return config
 
 def build_ua_mscnn(input_shape, n_classes, dropout_rate=0.3):
     """
@@ -333,7 +380,7 @@ def build_ua_mscnn(input_shape, n_classes, dropout_rate=0.3):
     # Stage 2
     x = MultiScaleFeaturePyramid(128)(x)
     x = ChannelAttention(reduction_ratio=8)(x)
-    x = SpatialAttention(kernel_sizes=[3, 5])(x)
+    x = SpatialAttention(kernel_sizes=[3, 5, 7])(x)
     x = layers.MaxPooling2D(2)(x)
     x = MonteCarloDropout(dropout_rate)(x)
     skip2 = x
@@ -341,7 +388,7 @@ def build_ua_mscnn(input_shape, n_classes, dropout_rate=0.3):
     # Stage 3
     x = MultiScaleFeaturePyramid(256)(x)
     x = ChannelAttention(reduction_ratio=16)(x)
-    x = SpatialAttention(kernel_sizes=[3])(x)
+    x = SpatialAttention(kernel_sizes=[3, 5, 7])(x)
     x = MonteCarloDropout(dropout_rate)(x)
 
     # Feature Aggregation with Skip Connections
@@ -811,11 +858,12 @@ class GradCAM:
         # Find the last convolutional layer if not specified
         if layer_name is None:
             for layer in reversed(model.layers):
-                if 'conv' in layer.name.lower() or 'multi_scale' in layer.name.lower():
+                if 'conv' in layer.name.lower():
                     layer_name = layer.name
                     break
 
         self.layer_name = layer_name
+        print(f"Using layer: {layer_name}")
 
         # Create gradient model
         self.grad_model = Model(
@@ -860,17 +908,29 @@ class GradCAM:
         """
         Overlay Grad-CAM heatmap on image
         """
-        import cv2
+        try:
+            import cv2
+            use_cv2 = True
+        except ImportError:
+            use_cv2 = False
 
         heatmap = self.compute_heatmap(image, class_idx)
 
         # Resize heatmap to image size
-        heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
-
-        # Convert to RGB heatmap
-        heatmap = np.uint8(255 * heatmap)
-        heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-        heatmap = heatmap.astype(np.float32) / 255.0
+        if use_cv2:
+            heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
+            heatmap = np.uint8(255 * heatmap)
+            heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+            heatmap = heatmap.astype(np.float32) / 255.0
+        else:
+            # Fallback without OpenCV
+            from scipy.ndimage import zoom
+            zoom_factor = (image.shape[0] / heatmap.shape[0],
+                          image.shape[1] / heatmap.shape[1])
+            heatmap = zoom(heatmap, zoom_factor)
+            # Create RGB heatmap using matplotlib colormap
+            cmap = plt.cm.jet
+            heatmap = cmap(heatmap)[:, :, :3]
 
         # Overlay
         if len(image.shape) == 2:
@@ -892,7 +952,6 @@ try:
 
     if last_conv_layer:
         gradcam = GradCAM(model, last_conv_layer)
-        print(f"Grad-CAM initialized with layer: {last_conv_layer}")
 
         # Generate Grad-CAM visualizations for sample images
         print("\nGenerating Grad-CAM visualizations...")
@@ -1219,6 +1278,8 @@ def cohens_d(group1, group2):
     n1, n2 = len(group1), len(group2)
     var1, var2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
     pooled_std = np.sqrt(((n1-1)*var1 + (n2-1)*var2) / (n1+n2-2))
+    if pooled_std == 0:
+        return 0
     return (np.mean(group1) - np.mean(group2)) / pooled_std
 
 # Compute per-sample correctness for effect size
