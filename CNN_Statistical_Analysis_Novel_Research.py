@@ -842,10 +842,150 @@ for metric in cv_results.keys():
     print(f"  Shapiro-Wilk test for {metric}: W={stat:.4f}, p={p_value:.4f}")
 
 # ============================================================================
-# SECTION 8: EXPLAINABLE AI - GRAD-CAM VISUALIZATION
+# SECTION 8: STATISTICAL COMPARISON WITH BASELINE MODELS
+# (Moved before SHAP to avoid gradient registry conflicts)
 # ============================================================================
 print("\n" + "=" * 80)
-print("SECTION 8: Explainable AI - Grad-CAM Visualization")
+print("SECTION 8: Statistical Comparison with Baseline Models")
+print("=" * 80)
+
+def build_baseline_cnn(input_shape, n_classes):
+    """Simple baseline CNN without novel components"""
+    model = keras.Sequential([
+        layers.Conv2D(32, 3, activation='relu', input_shape=input_shape),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(64, 3, activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Conv2D(64, 3, activation='relu'),
+        layers.Flatten(),
+        layers.Dense(64, activation='relu'),
+        layers.Dropout(0.5),
+        layers.Dense(n_classes, activation='softmax')
+    ])
+    return model
+
+def build_resnet_style(input_shape, n_classes):
+    """ResNet-style baseline with skip connections"""
+    inputs = layers.Input(shape=input_shape)
+
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(inputs)
+    x = layers.BatchNormalization()(x)
+
+    # Residual block 1
+    skip = x
+    x = layers.Conv2D(64, 3, padding='same', activation='relu')(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Conv2D(64, 3, padding='same')(x)
+    x = layers.Add()([x, skip])
+    x = layers.Activation('relu')(x)
+    x = layers.MaxPooling2D(2)(x)
+
+    # Residual block 2
+    skip = layers.Conv2D(128, 1, padding='same')(x)
+    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Conv2D(128, 3, padding='same')(x)
+    x = layers.Add()([x, skip])
+    x = layers.Activation('relu')(x)
+    x = layers.MaxPooling2D(2)(x)
+
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.Dense(256, activation='relu')(x)
+    x = layers.Dropout(0.5)(x)
+    outputs = layers.Dense(n_classes, activation='softmax')(x)
+
+    return Model(inputs, outputs)
+
+print("Training baseline models for comparison...")
+
+# Use a subset for faster comparison
+X_sub_train = X_train[:10000]
+y_sub_train = y_train[:10000]
+y_sub_train_cat = to_categorical(y_sub_train, n_classes)
+
+# Train Baseline CNN
+print("\n1. Training Simple Baseline CNN...")
+baseline_cnn = build_baseline_cnn(X_train.shape[1:], n_classes)
+baseline_cnn.compile(optimizer=Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
+baseline_cnn.fit(X_sub_train, y_sub_train_cat, epochs=20, batch_size=128,
+                  validation_split=0.1, verbose=0,
+                  callbacks=[EarlyStopping(patience=5, restore_best_weights=True, verbose=0)])
+baseline_pred = np.argmax(baseline_cnn.predict(X_test, verbose=0), axis=1)
+baseline_acc = accuracy_score(y_test, baseline_pred)
+print(f"   Accuracy: {baseline_acc:.4f}")
+
+# Train ResNet-style
+print("\n2. Training ResNet-style CNN...")
+resnet_model = build_resnet_style(X_train.shape[1:], n_classes)
+resnet_model.compile(optimizer=Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
+resnet_model.fit(X_sub_train, y_sub_train_cat, epochs=20, batch_size=128,
+                  validation_split=0.1, verbose=0,
+                  callbacks=[EarlyStopping(patience=5, restore_best_weights=True, verbose=0)])
+resnet_pred = np.argmax(resnet_model.predict(X_test, verbose=0), axis=1)
+resnet_acc = accuracy_score(y_test, resnet_pred)
+print(f"   Accuracy: {resnet_acc:.4f}")
+
+# Our UA-MSCNN
+ua_mscnn_acc = accuracy_score(y_test, y_pred)
+print(f"\n3. UA-MSCNN (Proposed): {ua_mscnn_acc:.4f}")
+
+# Statistical Comparison
+print("\n" + "-" * 60)
+print("Statistical Comparison (McNemar's Test):")
+print("-" * 60)
+
+# McNemar's test: UA-MSCNN vs Baseline
+p_val_baseline, stat_baseline = stat_framework.mcnemar_test(y_pred, baseline_pred)
+print(f"UA-MSCNN vs Baseline CNN: χ²={stat_baseline:.4f}, p={p_val_baseline:.4f}")
+print(f"  → {'Significant difference (p<0.05)' if p_val_baseline < 0.05 else 'No significant difference'}")
+
+# McNemar's test: UA-MSCNN vs ResNet
+p_val_resnet, stat_resnet = stat_framework.mcnemar_test(y_pred, resnet_pred)
+print(f"UA-MSCNN vs ResNet-style: χ²={stat_resnet:.4f}, p={p_val_resnet:.4f}")
+print(f"  → {'Significant difference (p<0.05)' if p_val_resnet < 0.05 else 'No significant difference'}")
+
+# Effect size (Cohen's d)
+def cohens_d(group1, group2):
+    n1, n2 = len(group1), len(group2)
+    var1, var2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+    pooled_std = np.sqrt(((n1-1)*var1 + (n2-1)*var2) / (n1+n2-2))
+    if pooled_std == 0:
+        return 0
+    return (np.mean(group1) - np.mean(group2)) / pooled_std
+
+# Compute per-sample correctness for effect size
+ua_correct = (y_pred == y_test).astype(float)
+baseline_correct = (baseline_pred == y_test).astype(float)
+resnet_correct = (resnet_pred == y_test).astype(float)
+
+print("\nEffect Size (Cohen's d):")
+print(f"  UA-MSCNN vs Baseline: d = {cohens_d(ua_correct, baseline_correct):.4f}")
+print(f"  UA-MSCNN vs ResNet: d = {cohens_d(ua_correct, resnet_correct):.4f}")
+
+# Summary table
+print("\n" + "=" * 60)
+print("MODEL COMPARISON SUMMARY")
+print("=" * 60)
+
+comparison_df = pd.DataFrame({
+    'Model': ['Baseline CNN', 'ResNet-style', 'UA-MSCNN (Proposed)'],
+    'Accuracy': [baseline_acc, resnet_acc, ua_mscnn_acc],
+    'F1-Score (weighted)': [
+        f1_score(y_test, baseline_pred, average='weighted'),
+        f1_score(y_test, resnet_pred, average='weighted'),
+        f1_score(y_test, y_pred, average='weighted')
+    ],
+    'Has Uncertainty': ['No', 'No', 'Yes'],
+    'Explainable': ['Limited', 'Limited', 'Full (SHAP+GradCAM)']
+})
+
+print(comparison_df.to_string(index=False))
+
+# ============================================================================
+# SECTION 9: EXPLAINABLE AI - GRAD-CAM VISUALIZATION
+# ============================================================================
+print("\n" + "=" * 80)
+print("SECTION 9: Explainable AI - Grad-CAM Visualization")
 print("=" * 80)
 
 class GradCAM:
@@ -1002,10 +1142,10 @@ except Exception as e:
     print(f"Grad-CAM visualization error: {e}")
 
 # ============================================================================
-# SECTION 9: SHAP EXPLAINABILITY
+# SECTION 10: SHAP EXPLAINABILITY (Run last - modifies TF gradient registry)
 # ============================================================================
 print("\n" + "=" * 80)
-print("SECTION 9: SHAP Explainability Analysis")
+print("SECTION 10: SHAP Explainability Analysis")
 print("=" * 80)
 
 try:
@@ -1057,10 +1197,10 @@ except Exception as e:
     print(f"SHAP analysis error: {e}")
 
 # ============================================================================
-# SECTION 10: COMPREHENSIVE RESULTS VISUALIZATION
+# SECTION 11: COMPREHENSIVE RESULTS VISUALIZATION
 # ============================================================================
 print("\n" + "=" * 80)
-print("SECTION 10: Comprehensive Results Visualization")
+print("SECTION 11: Comprehensive Results Visualization")
 print("=" * 80)
 
 # Create comprehensive figure
@@ -1170,145 +1310,6 @@ plt.tight_layout()
 plt.savefig('comprehensive_results.png', dpi=300, bbox_inches='tight')
 plt.show()
 print("✓ Comprehensive results saved to 'comprehensive_results.png'")
-
-# ============================================================================
-# SECTION 11: STATISTICAL COMPARISON WITH BASELINE MODELS
-# ============================================================================
-print("\n" + "=" * 80)
-print("SECTION 11: Statistical Comparison with Baseline Models")
-print("=" * 80)
-
-def build_baseline_cnn(input_shape, n_classes):
-    """Simple baseline CNN without novel components"""
-    model = keras.Sequential([
-        layers.Conv2D(32, 3, activation='relu', input_shape=input_shape),
-        layers.MaxPooling2D(2),
-        layers.Conv2D(64, 3, activation='relu'),
-        layers.MaxPooling2D(2),
-        layers.Conv2D(64, 3, activation='relu'),
-        layers.Flatten(),
-        layers.Dense(64, activation='relu'),
-        layers.Dropout(0.5),
-        layers.Dense(n_classes, activation='softmax')
-    ])
-    return model
-
-def build_resnet_style(input_shape, n_classes):
-    """ResNet-style baseline with skip connections"""
-    inputs = layers.Input(shape=input_shape)
-
-    x = layers.Conv2D(64, 3, padding='same', activation='relu')(inputs)
-    x = layers.BatchNormalization()(x)
-
-    # Residual block 1
-    skip = x
-    x = layers.Conv2D(64, 3, padding='same', activation='relu')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Conv2D(64, 3, padding='same')(x)
-    x = layers.Add()([x, skip])
-    x = layers.Activation('relu')(x)
-    x = layers.MaxPooling2D(2)(x)
-
-    # Residual block 2
-    skip = layers.Conv2D(128, 1, padding='same')(x)
-    x = layers.Conv2D(128, 3, padding='same', activation='relu')(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Conv2D(128, 3, padding='same')(x)
-    x = layers.Add()([x, skip])
-    x = layers.Activation('relu')(x)
-    x = layers.MaxPooling2D(2)(x)
-
-    x = layers.GlobalAveragePooling2D()(x)
-    x = layers.Dense(256, activation='relu')(x)
-    x = layers.Dropout(0.5)(x)
-    outputs = layers.Dense(n_classes, activation='softmax')(x)
-
-    return Model(inputs, outputs)
-
-print("Training baseline models for comparison...")
-
-# Use a subset for faster comparison
-X_sub_train = X_train[:10000]
-y_sub_train = y_train[:10000]
-y_sub_train_cat = to_categorical(y_sub_train, n_classes)
-
-# Train Baseline CNN
-print("\n1. Training Simple Baseline CNN...")
-baseline_cnn = build_baseline_cnn(X_train.shape[1:], n_classes)
-baseline_cnn.compile(optimizer=Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
-baseline_cnn.fit(X_sub_train, y_sub_train_cat, epochs=20, batch_size=128,
-                  validation_split=0.1, verbose=0,
-                  callbacks=[EarlyStopping(patience=5, restore_best_weights=True, verbose=0)])
-baseline_pred = np.argmax(baseline_cnn.predict(X_test, verbose=0), axis=1)
-baseline_acc = accuracy_score(y_test, baseline_pred)
-print(f"   Accuracy: {baseline_acc:.4f}")
-
-# Train ResNet-style
-print("\n2. Training ResNet-style CNN...")
-resnet_model = build_resnet_style(X_train.shape[1:], n_classes)
-resnet_model.compile(optimizer=Adam(1e-3), loss='categorical_crossentropy', metrics=['accuracy'])
-resnet_model.fit(X_sub_train, y_sub_train_cat, epochs=20, batch_size=128,
-                  validation_split=0.1, verbose=0,
-                  callbacks=[EarlyStopping(patience=5, restore_best_weights=True, verbose=0)])
-resnet_pred = np.argmax(resnet_model.predict(X_test, verbose=0), axis=1)
-resnet_acc = accuracy_score(y_test, resnet_pred)
-print(f"   Accuracy: {resnet_acc:.4f}")
-
-# Our UA-MSCNN
-ua_mscnn_acc = accuracy_score(y_test, y_pred)
-print(f"\n3. UA-MSCNN (Proposed): {ua_mscnn_acc:.4f}")
-
-# Statistical Comparison
-print("\n" + "-" * 60)
-print("Statistical Comparison (McNemar's Test):")
-print("-" * 60)
-
-# McNemar's test: UA-MSCNN vs Baseline
-p_val_baseline, stat_baseline = stat_framework.mcnemar_test(y_pred, baseline_pred)
-print(f"UA-MSCNN vs Baseline CNN: χ²={stat_baseline:.4f}, p={p_val_baseline:.4f}")
-print(f"  → {'Significant difference (p<0.05)' if p_val_baseline < 0.05 else 'No significant difference'}")
-
-# McNemar's test: UA-MSCNN vs ResNet
-p_val_resnet, stat_resnet = stat_framework.mcnemar_test(y_pred, resnet_pred)
-print(f"UA-MSCNN vs ResNet-style: χ²={stat_resnet:.4f}, p={p_val_resnet:.4f}")
-print(f"  → {'Significant difference (p<0.05)' if p_val_resnet < 0.05 else 'No significant difference'}")
-
-# Effect size (Cohen's d)
-def cohens_d(group1, group2):
-    n1, n2 = len(group1), len(group2)
-    var1, var2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
-    pooled_std = np.sqrt(((n1-1)*var1 + (n2-1)*var2) / (n1+n2-2))
-    if pooled_std == 0:
-        return 0
-    return (np.mean(group1) - np.mean(group2)) / pooled_std
-
-# Compute per-sample correctness for effect size
-ua_correct = (y_pred == y_test).astype(float)
-baseline_correct = (baseline_pred == y_test).astype(float)
-resnet_correct = (resnet_pred == y_test).astype(float)
-
-print("\nEffect Size (Cohen's d):")
-print(f"  UA-MSCNN vs Baseline: d = {cohens_d(ua_correct, baseline_correct):.4f}")
-print(f"  UA-MSCNN vs ResNet: d = {cohens_d(ua_correct, resnet_correct):.4f}")
-
-# Summary table
-print("\n" + "=" * 60)
-print("MODEL COMPARISON SUMMARY")
-print("=" * 60)
-
-comparison_df = pd.DataFrame({
-    'Model': ['Baseline CNN', 'ResNet-style', 'UA-MSCNN (Proposed)'],
-    'Accuracy': [baseline_acc, resnet_acc, ua_mscnn_acc],
-    'F1-Score (weighted)': [
-        f1_score(y_test, baseline_pred, average='weighted'),
-        f1_score(y_test, resnet_pred, average='weighted'),
-        f1_score(y_test, y_pred, average='weighted')
-    ],
-    'Has Uncertainty': ['No', 'No', 'Yes'],
-    'Explainable': ['Limited', 'Limited', 'Full (SHAP+GradCAM)']
-})
-
-print(comparison_df.to_string(index=False))
 
 # ============================================================================
 # SECTION 12: FINAL RESULTS AND PUBLICATION-READY SUMMARY
