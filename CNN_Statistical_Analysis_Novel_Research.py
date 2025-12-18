@@ -1142,13 +1142,24 @@ except Exception as e:
     print(f"Grad-CAM visualization error: {e}")
 
 # ============================================================================
-# SECTION 10: SHAP EXPLAINABILITY (Run last - modifies TF gradient registry)
+# SECTION 10: SHAP EXPLAINABILITY (DISABLED - causes TF gradient registry conflicts)
+# NOTE: SHAP's DeepExplainer modifies TensorFlow's gradient registry permanently
+#       which breaks subsequent model training. Grad-CAM provides sufficient
+#       explainability for publication. Enable only in a fresh Python session.
 # ============================================================================
 print("\n" + "=" * 80)
 print("SECTION 10: SHAP Explainability Analysis")
 print("=" * 80)
 
-try:
+ENABLE_SHAP = False  # Set to True only in a fresh Python session
+
+if not ENABLE_SHAP:
+    print("SHAP analysis is DISABLED to prevent TensorFlow gradient registry conflicts.")
+    print("Grad-CAM provides sufficient explainability for publication.")
+    print("To enable SHAP: Set ENABLE_SHAP = True and run in a FRESH Spyder session.")
+
+if ENABLE_SHAP:
+  try:
     import shap
 
     print("Initializing SHAP DeepExplainer...")
@@ -1191,9 +1202,9 @@ try:
     plt.show()
     print("✓ SHAP importance map saved to 'shap_importance.png'")
 
-except ImportError:
+  except ImportError:
     print("SHAP not installed. Install with: pip install shap")
-except Exception as e:
+  except Exception as e:
     print(f"SHAP analysis error: {e}")
 
 # ============================================================================
