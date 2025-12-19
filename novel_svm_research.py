@@ -598,10 +598,10 @@ class AdaptiveKernelScalingSVM:
 
         return np.array(densities)
 
-    def _adaptive_kernel(self, X, Y):
+    def _adaptive_kernel(self, X, Y, X_scales=None, Y_scales=None):
         """Compute adaptively scaled kernel matrix."""
         if self.base_gamma == 'scale':
-            gamma = 1.0 / (X.shape[1] * X.var())
+            gamma = 1.0 / (X.shape[1] * X.var() + 1e-10)
         elif self.base_gamma == 'auto':
             gamma = 1.0 / X.shape[1]
         else:
@@ -609,10 +609,10 @@ class AdaptiveKernelScalingSVM:
 
         distances = cdist(X, Y, 'euclidean')
 
-        # Apply local scaling
-        if self.local_scales is not None:
+        # Apply local scaling if scales are provided
+        if X_scales is not None and Y_scales is not None:
             # Scale distances based on local density
-            scale_matrix = np.sqrt(np.outer(self.local_scales, self.local_scales[:len(Y)]))
+            scale_matrix = np.sqrt(np.outer(X_scales, Y_scales))
             scale_matrix = np.maximum(scale_matrix, 1e-10)
             distances = distances / scale_matrix
 
@@ -627,10 +627,10 @@ class AdaptiveKernelScalingSVM:
         self.local_scales = self._compute_local_density(X)
 
         # Normalize scales
-        self.local_scales = self.local_scales / np.median(self.local_scales)
+        self.local_scales = self.local_scales / (np.median(self.local_scales) + 1e-10)
 
         # Compute adaptive kernel
-        kernel_matrix = self._adaptive_kernel(X, X)
+        kernel_matrix = self._adaptive_kernel(X, X, self.local_scales, self.local_scales)
 
         # Class weights for imbalanced data
         class_weight = 'balanced' if self.balance_classes else None
@@ -650,15 +650,10 @@ class AdaptiveKernelScalingSVM:
 
         # Compute local scales for test data
         test_scales = self._compute_local_density(X)
-        test_scales = test_scales / np.median(test_scales)
+        test_scales = test_scales / (np.median(test_scales) + 1e-10)
 
-        # Temporarily update local scales for test data
-        original_scales = self.local_scales
-        self.local_scales = np.concatenate([original_scales, test_scales])
-
-        kernel_matrix = self._adaptive_kernel(X, self.X_train)
-
-        self.local_scales = original_scales
+        # Compute kernel matrix between test and training data
+        kernel_matrix = self._adaptive_kernel(X, self.X_train, test_scales, self.local_scales)
 
         return self.svm.predict(kernel_matrix)
 
@@ -666,15 +661,12 @@ class AdaptiveKernelScalingSVM:
         """Predict probabilities."""
         X = self.scaler.transform(X)
 
+        # Compute local scales for test data
         test_scales = self._compute_local_density(X)
-        test_scales = test_scales / np.median(test_scales)
+        test_scales = test_scales / (np.median(test_scales) + 1e-10)
 
-        original_scales = self.local_scales
-        self.local_scales = np.concatenate([original_scales, test_scales])
-
-        kernel_matrix = self._adaptive_kernel(X, self.X_train)
-
-        self.local_scales = original_scales
+        # Compute kernel matrix between test and training data
+        kernel_matrix = self._adaptive_kernel(X, self.X_train, test_scales, self.local_scales)
 
         return self.svm.predict_proba(kernel_matrix)
 
