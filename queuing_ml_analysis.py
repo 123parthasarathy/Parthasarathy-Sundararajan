@@ -1030,12 +1030,30 @@ class QueueMLModels:
         self.scaler_y = StandardScaler()
 
     def prepare_data(self, df, target_col, feature_cols=None, test_size=0.2):
-        """Prepare data for training"""
+        """Prepare data for training with robust numeric conversion"""
         if feature_cols is None:
             feature_cols = [c for c in df.columns if c != target_col]
 
-        X = df[feature_cols].values
-        y = df[target_col].values
+        # Create a copy to avoid modifying original data
+        data = df.copy()
+
+        # Convert target column to numeric, coercing errors to NaN
+        data[target_col] = pd.to_numeric(data[target_col], errors='coerce')
+
+        # Convert feature columns to numeric, coercing errors to NaN
+        for col in feature_cols:
+            data[col] = pd.to_numeric(data[col], errors='coerce')
+
+        # Drop rows with NaN values in target or features
+        data = data.dropna(subset=[target_col] + feature_cols)
+
+        if len(data) < 50:
+            raise ValueError(f"Not enough data after cleaning: {len(data)} rows")
+
+        print(f"    Data shape after cleaning: {data.shape}")
+
+        X = data[feature_cols].values.astype(np.float64)
+        y = data[target_col].values.astype(np.float64)
 
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=42
@@ -2337,61 +2355,67 @@ def main():
         print(f"\n  Processing {dataset_name}...")
         print("-" * 50)
 
-        # Prepare data
-        data = ml_models.prepare_data(
-            config['data'],
-            config['target'],
-            config['features']
-        )
-
-        # Train traditional models
-        print("\n  Training Traditional ML Models...")
-        traditional_results = ml_models.train_traditional_models(data)
-
-        # Train deep learning models
-        print("\n  Training Deep Learning Models...")
-        dl_results = ml_models.train_deep_learning_models(
-            data, epochs=50, batch_size=64, sequence_length=10
-        )
-
-        # Combine results
-        combined_results = {**traditional_results, **dl_results}
-        all_results[dataset_name] = combined_results
-
-        # Store predictions
-        predictions = {name: res['predictions'] for name, res in combined_results.items()}
-        all_predictions[dataset_name] = (data['y_test_orig'], predictions)
-
-        # Visualize results
-        print("\n  Creating visualizations...")
-        viz.plot_model_comparison(
-            combined_results,
-            dataset_name,
-            f'11_{dataset_name.lower().replace(" ", "_")}_model_comparison'
-        )
-
-        viz.plot_predictions_vs_actual(
-            data['y_test_orig'],
-            predictions,
-            dataset_name,
-            f'12_{dataset_name.lower().replace(" ", "_")}_predictions'
-        )
-
-        viz.plot_residuals(
-            data['y_test_orig'],
-            predictions,
-            dataset_name,
-            f'13_{dataset_name.lower().replace(" ", "_")}_residuals'
-        )
-
-        # Feature importance (for Random Forest)
-        if 'Random Forest' in combined_results:
-            viz.plot_feature_importance(
-                combined_results['Random Forest']['model'],
-                config['features'],
-                dataset_name,
-                f'14_{dataset_name.lower().replace(" ", "_")}_feature_importance'
+        try:
+            # Prepare data with robust numeric conversion
+            data = ml_models.prepare_data(
+                config['data'],
+                config['target'],
+                config['features']
             )
+
+            # Train traditional models
+            print("\n  Training Traditional ML Models...")
+            traditional_results = ml_models.train_traditional_models(data)
+
+            # Train deep learning models
+            print("\n  Training Deep Learning Models...")
+            dl_results = ml_models.train_deep_learning_models(
+                data, epochs=50, batch_size=64, sequence_length=10
+            )
+
+            # Combine results
+            combined_results = {**traditional_results, **dl_results}
+            all_results[dataset_name] = combined_results
+
+            # Store predictions
+            predictions = {name: res['predictions'] for name, res in combined_results.items()}
+            all_predictions[dataset_name] = (data['y_test_orig'], predictions)
+
+            # Visualize results
+            print("\n  Creating visualizations...")
+            viz.plot_model_comparison(
+                combined_results,
+                dataset_name,
+                f'11_{dataset_name.lower().replace(" ", "_")}_model_comparison'
+            )
+
+            viz.plot_predictions_vs_actual(
+                data['y_test_orig'],
+                predictions,
+                dataset_name,
+                f'12_{dataset_name.lower().replace(" ", "_")}_predictions'
+            )
+
+            viz.plot_residuals(
+                data['y_test_orig'],
+                predictions,
+                dataset_name,
+                f'13_{dataset_name.lower().replace(" ", "_")}_residuals'
+            )
+
+            # Feature importance (for Random Forest)
+            if 'Random Forest' in combined_results:
+                viz.plot_feature_importance(
+                    combined_results['Random Forest']['model'],
+                    config['features'],
+                    dataset_name,
+                    f'14_{dataset_name.lower().replace(" ", "_")}_feature_importance'
+                )
+
+        except Exception as e:
+            print(f"\n  ERROR processing {dataset_name}: {e}")
+            print(f"  Skipping {dataset_name} and continuing with other datasets...")
+            continue
 
     # ==============================================================================
     print("\n" + "="*80)
