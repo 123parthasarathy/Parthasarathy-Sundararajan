@@ -1337,20 +1337,34 @@ class QueueVisualization:
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
         fig.suptitle(f'{title} - Data Distribution Analysis', fontsize=14, fontweight='bold')
 
-        numeric_cols = df.select_dtypes(include=[np.number]).columns[:6]
+        numeric_cols = df.select_dtypes(include=[np.number]).columns[:6].tolist()
 
         for idx, col in enumerate(numeric_cols):
             ax = axes[idx // 3, idx % 3]
-            ax.hist(df[col], bins=50, edgecolor='black', alpha=0.7, color='steelblue')
-            ax.set_xlabel(col)
-            ax.set_ylabel('Frequency')
-            ax.set_title(f'Distribution of {col}')
 
-            # Add statistics
-            mean_val = df[col].mean()
-            std_val = df[col].std()
-            ax.axvline(mean_val, color='red', linestyle='--', label=f'Mean: {mean_val:.2f}')
-            ax.legend(fontsize=8)
+            # Get clean data for plotting - drop NaN and convert to numeric
+            try:
+                plot_data = pd.to_numeric(df[col], errors='coerce').dropna().values
+                if len(plot_data) > 0:
+                    ax.hist(plot_data, bins=50, edgecolor='black', alpha=0.7, color='steelblue')
+                    ax.set_xlabel(col)
+                    ax.set_ylabel('Frequency')
+                    ax.set_title(f'Distribution of {col}')
+
+                    # Add statistics
+                    mean_val = np.mean(plot_data)
+                    ax.axvline(mean_val, color='red', linestyle='--', label=f'Mean: {mean_val:.2f}')
+                    ax.legend(fontsize=8)
+                else:
+                    ax.text(0.5, 0.5, 'No valid data', ha='center', va='center', transform=ax.transAxes)
+                    ax.set_title(f'{col} (no data)')
+            except Exception as e:
+                ax.text(0.5, 0.5, f'Error: {str(e)[:20]}', ha='center', va='center', transform=ax.transAxes)
+                ax.set_title(f'{col} (error)')
+
+        # Hide empty subplots
+        for idx in range(len(numeric_cols), 6):
+            axes[idx // 3, idx % 3].set_visible(False)
 
         plt.tight_layout()
         plt.savefig(f'{self.output_dir}/{filename}.png', dpi=300, bbox_inches='tight')
