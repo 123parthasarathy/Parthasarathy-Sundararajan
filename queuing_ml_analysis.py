@@ -1581,38 +1581,69 @@ class QueueVisualization:
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
         fig.suptitle(f'{title} - Time Series Analysis', fontsize=14, fontweight='bold')
 
-        # Time series plot
-        axes[0, 0].plot(df[time_col][:500], df[target_col][:500], 'b-', lw=1, alpha=0.7)
-        axes[0, 0].set_xlabel(time_col)
-        axes[0, 0].set_ylabel(target_col)
-        axes[0, 0].set_title('Time Series Pattern')
+        # Get numeric data
+        try:
+            time_data = pd.to_numeric(df[time_col], errors='coerce').dropna()
+            target_data = pd.to_numeric(df[target_col], errors='coerce').dropna()
+            n_samples = min(500, len(time_data), len(target_data))
+        except:
+            n_samples = min(500, len(df))
+            time_data = df[time_col][:n_samples] if time_col in df.columns else range(n_samples)
+            target_data = df[target_col][:n_samples] if target_col in df.columns else df.iloc[:n_samples, 0]
 
-        # Hourly pattern
-        hourly_avg = df.groupby('hour')[target_col].mean()
-        axes[0, 1].bar(hourly_avg.index, hourly_avg.values, color='steelblue', edgecolor='black')
-        axes[0, 1].set_xlabel('Hour of Day')
-        axes[0, 1].set_ylabel(f'Average {target_col}')
-        axes[0, 1].set_title('Hourly Pattern')
+        # Time series plot
+        try:
+            axes[0, 0].plot(range(n_samples), target_data[:n_samples].values, 'b-', lw=1, alpha=0.7)
+            axes[0, 0].set_xlabel('Sample Index')
+            axes[0, 0].set_ylabel(target_col)
+            axes[0, 0].set_title('Time Series Pattern')
+        except Exception as e:
+            axes[0, 0].text(0.5, 0.5, f'Error: {str(e)[:30]}', ha='center', va='center', transform=axes[0, 0].transAxes)
+
+        # Group pattern - use available grouping column
+        try:
+            group_col = None
+            for possible_col in ['hour', 'weekdays', 'day', 'shift', 'branches', time_col]:
+                if possible_col in df.columns:
+                    group_col = possible_col
+                    break
+
+            if group_col and target_col in df.columns:
+                group_avg = df.groupby(group_col)[target_col].mean()
+                axes[0, 1].bar(range(len(group_avg)), group_avg.values, color='steelblue', edgecolor='black')
+                axes[0, 1].set_xlabel(group_col)
+                axes[0, 1].set_ylabel(f'Average {target_col}')
+                axes[0, 1].set_title(f'Pattern by {group_col}')
+                axes[0, 1].set_xticks(range(len(group_avg)))
+                axes[0, 1].set_xticklabels([str(x)[:10] for x in group_avg.index], rotation=45, ha='right')
+            else:
+                axes[0, 1].text(0.5, 0.5, 'No grouping column available', ha='center', va='center', transform=axes[0, 1].transAxes)
+        except Exception as e:
+            axes[0, 1].text(0.5, 0.5, f'Error: {str(e)[:30]}', ha='center', va='center', transform=axes[0, 1].transAxes)
 
         # Autocorrelation
-        from pandas.plotting import autocorrelation_plot
-        autocorrelation_plot(df[target_col][:1000], ax=axes[1, 0])
-        axes[1, 0].set_title('Autocorrelation')
+        try:
+            from pandas.plotting import autocorrelation_plot
+            autocorrelation_plot(target_data[:min(1000, len(target_data))], ax=axes[1, 0])
+            axes[1, 0].set_title('Autocorrelation')
+        except Exception as e:
+            axes[1, 0].text(0.5, 0.5, f'Error: {str(e)[:30]}', ha='center', va='center', transform=axes[1, 0].transAxes)
 
         # Rolling statistics
-        rolling_mean = df[target_col].rolling(window=50).mean()
-        rolling_std = df[target_col].rolling(window=50).std()
+        try:
+            window = min(50, len(target_data) // 4) if len(target_data) > 4 else 2
+            rolling_mean = target_data.rolling(window=window).mean()
+            rolling_std = target_data.rolling(window=window).std()
 
-        axes[1, 1].plot(range(500), df[target_col][:500], 'b-', alpha=0.5, label='Original')
-        axes[1, 1].plot(range(500), rolling_mean[:500], 'r-', lw=2, label='Rolling Mean')
-        axes[1, 1].fill_between(range(500),
-                                 rolling_mean[:500] - rolling_std[:500],
-                                 rolling_mean[:500] + rolling_std[:500],
-                                 alpha=0.3, color='red', label='Rolling Std')
-        axes[1, 1].set_xlabel('Sample')
-        axes[1, 1].set_ylabel(target_col)
-        axes[1, 1].set_title('Rolling Statistics')
-        axes[1, 1].legend()
+            plot_n = min(n_samples, len(rolling_mean))
+            axes[1, 1].plot(range(plot_n), target_data[:plot_n].values, 'b-', alpha=0.5, label='Original')
+            axes[1, 1].plot(range(plot_n), rolling_mean[:plot_n].values, 'r-', lw=2, label='Rolling Mean')
+            axes[1, 1].set_xlabel('Sample')
+            axes[1, 1].set_ylabel(target_col)
+            axes[1, 1].set_title('Rolling Statistics')
+            axes[1, 1].legend()
+        except Exception as e:
+            axes[1, 1].text(0.5, 0.5, f'Error: {str(e)[:30]}', ha='center', va='center', transform=axes[1, 1].transAxes)
 
         plt.tight_layout()
         plt.savefig(f'{self.output_dir}/{filename}.png', dpi=300, bbox_inches='tight')
@@ -2183,8 +2214,15 @@ def main():
     viz.plot_queuing_theory_analysis('09_queuing_theory_analysis')
 
     print("\n  Creating time series analysis...")
-    viz.plot_time_series_analysis(bank_data, 'hour', 'waiting_time',
-                                   'Bank Queue', '10_bank_timeseries')
+    # Find suitable columns for time series analysis
+    bank_time_col = 'position' if 'position' in bank_data.columns else bank_data.select_dtypes(include=[np.number]).columns[0]
+    bank_target_col = 'waiting_time' if 'waiting_time' in bank_data.columns else bank_data.select_dtypes(include=[np.number]).columns[1] if len(bank_data.select_dtypes(include=[np.number]).columns) > 1 else bank_data.select_dtypes(include=[np.number]).columns[0]
+
+    try:
+        viz.plot_time_series_analysis(bank_data, bank_time_col, bank_target_col,
+                                       'Bank Queue', '10_bank_timeseries')
+    except Exception as e:
+        print(f"  Warning: Time series plot skipped - {e}")
 
     # ==============================================================================
     print("\n" + "="*80)
