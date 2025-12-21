@@ -2254,34 +2254,35 @@ def main():
 
     # Helper function to find target column
     def find_target_column(df, preferred_targets):
-        """Find a suitable target column"""
+        """Find a suitable NUMERIC target column"""
+        # Get list of numeric columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+        # Check preferred targets first - but only if they are numeric
         for target in preferred_targets:
-            if target in df.columns:
+            if target in numeric_cols:
                 return target
 
         # Fallback: find any numeric column with 'time', 'wait', 'duration' in name
-        for col in df.columns:
-            if any(kw in col.lower() for kw in ['time', 'wait', 'duration', 'delay']):
-                if df[col].dtype in [np.float64, np.int64, float, int]:
-                    return col
+        for col in numeric_cols:
+            if any(kw in col.lower() for kw in ['time', 'wait', 'duration', 'delay', 'score', 'rating']):
+                return col
 
         # Last resort: use first numeric column
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
         return numeric_cols[0] if len(numeric_cols) > 0 else None
 
     # Define datasets with flexible configuration
     print("\n  Configuring datasets for ML training...")
 
     # Bank Queue Configuration
-    bank_target = find_target_column(bank_data, ['waiting_time', 'wait_time', 'time'])
+    bank_target = find_target_column(bank_data, ['waiting_time', 'wait_time', 'service_time', 'time'])
     bank_features = get_valid_features(bank_data,
-        ['hour', 'day_of_week', 'transaction_type', 'num_tellers', 'queue_length',
-         'arrival_rate', 'service_time'], bank_target)
+        ['position', 'service_received_time', 'service_time', 'branches', 'weekdays', 'shift'], bank_target)
     print(f"  Bank Queue - Target: {bank_target}, Features: {bank_features}")
 
-    # Call Center Configuration
+    # Call Center Configuration - use numeric columns only
     cc_target = find_target_column(call_center_data,
-        ['call_duration', 'waiting_time', 'call_duration_in_minutes', 'duration'])
+        ['call_duration_in_minutes', 'csat_score', 'call_duration', 'response_time_encoded'])
     cc_features = get_valid_features(call_center_data,
         ['hour', 'day_of_week', 'satisfaction_score', 'csat_score', 'response_time',
          'sentiment_encoded', 'reason_encoded', 'channel_encoded'], cc_target)
