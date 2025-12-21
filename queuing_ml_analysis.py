@@ -538,10 +538,14 @@ class QueueDataPreprocessor:
                 pass
 
         # Encode categorical variables
-        for col in processed.select_dtypes(include=['object']).columns:
-            if processed[col].nunique() < 20:
-                processed[f'{col}_encoded'] = LabelEncoder().fit_transform(
-                    processed[col].astype(str))
+        for col in processed.select_dtypes(include=['object']).columns.tolist():
+            try:
+                if processed[col].nunique() < 20:
+                    processed[f'{col}_encoded'] = LabelEncoder().fit_transform(
+                        processed[col].astype(str).fillna('Unknown'))
+            except Exception as e:
+                print(f"  Warning: Could not encode column {col}: {e}")
+                continue
 
         return processed
 
@@ -555,11 +559,16 @@ class QueueDataPreprocessor:
 
         processed = df.copy()
 
+        # Standardize column names - replace dots and spaces
+        processed.columns = processed.columns.str.replace('.', '_', regex=False)
+        processed.columns = processed.columns.str.replace(' ', '_', regex=False)
+        processed.columns = processed.columns.str.lower()
+
         # Select numeric columns for analysis
         numeric_cols = processed.select_dtypes(include=[np.number]).columns.tolist()
 
         # Look for relevant columns
-        relevant_patterns = ['time', 'wait', 'patient', 'rate', 'score', 'quality']
+        relevant_patterns = ['time', 'wait', 'patient', 'rate', 'score', 'quality', 'rating']
         relevant_cols = [c for c in processed.columns
                         if any(p in c.lower() for p in relevant_patterns)]
 
@@ -584,30 +593,41 @@ class QueueDataPreprocessor:
 
         processed = df.copy()
 
+        # Standardize column names
+        processed.columns = processed.columns.str.strip().str.lower().str.replace(' ', '_')
+
         # Convert tenure to service time proxy
         if 'tenure' in processed.columns:
-            processed['service_duration'] = processed['tenure']
+            processed['service_duration'] = pd.to_numeric(processed['tenure'], errors='coerce')
 
         # Convert charges to service intensity
         if 'monthlycharges' in processed.columns:
             processed['service_intensity'] = pd.to_numeric(
                 processed['monthlycharges'], errors='coerce')
 
+        if 'totalcharges' in processed.columns:
+            processed['totalcharges'] = pd.to_numeric(
+                processed['totalcharges'], errors='coerce')
+
         # Encode categorical variables
         le = LabelEncoder()
-        for col in processed.select_dtypes(include=['object']).columns:
-            if processed[col].nunique() < 10:
-                processed[f'{col}_encoded'] = le.fit_transform(processed[col].astype(str))
+        for col in processed.select_dtypes(include=['object']).columns.tolist():
+            try:
+                if processed[col].nunique() < 15:
+                    processed[f'{col}_encoded'] = le.fit_transform(
+                        processed[col].astype(str).fillna('Unknown'))
+            except Exception as e:
+                print(f"  Warning: Could not encode column {col}: {e}")
+                continue
 
         # Convert target variable (Churn = customer left queue/service)
         if 'churn' in processed.columns:
-            processed['churn_encoded'] = (processed['churn'].str.lower() == 'yes').astype(int)
+            try:
+                processed['churn_encoded'] = (processed['churn'].astype(str).str.lower() == 'yes').astype(int)
+            except:
+                pass
 
         return processed
-
-
-# Helper function for LabelEncoder import
-from sklearn.preprocessing import LabelEncoder
 
 
 # ==============================================================================
