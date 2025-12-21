@@ -512,15 +512,19 @@ class RealDataGenerator:
         waiting_time = np.maximum(0, waiting_time + np.random.normal(0, 10, n_samples))
 
         # Outcome (1=Discharged, 2=Admitted, 3=Transferred, 4=Left without being seen)
-        outcome_probs = np.where(
-            triage_level == 1, [[0.3, 0.6, 0.08, 0.02]],
-            np.where(triage_level == 2, [[0.5, 0.4, 0.05, 0.05]],
-            np.where(triage_level == 3, [[0.7, 0.2, 0.02, 0.08]],
-            np.where(triage_level == 4, [[0.85, 0.05, 0.01, 0.09]],
-            [[0.9, 0.02, 0.01, 0.07]])))
-        ).reshape(-1, 4)
+        # Define outcome probabilities by triage level
+        outcome_prob_map = {
+            1: [0.3, 0.6, 0.08, 0.02],   # Critical - high admission rate
+            2: [0.5, 0.4, 0.05, 0.05],   # Emergent
+            3: [0.7, 0.2, 0.02, 0.08],   # Urgent
+            4: [0.85, 0.05, 0.01, 0.09], # Less Urgent
+            5: [0.9, 0.02, 0.01, 0.07]   # Non-urgent - high discharge rate
+        }
 
-        outcome = np.array([np.random.choice([1, 2, 3, 4], p=p) for p in outcome_probs])
+        outcome = np.array([
+            np.random.choice([1, 2, 3, 4], p=outcome_prob_map[t])
+            for t in triage_level
+        ])
 
         df = pd.DataFrame({
             'hour': hours,
