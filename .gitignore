@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+output_graphs/
+extracted_images/
+replacement.zip
+*.zip
